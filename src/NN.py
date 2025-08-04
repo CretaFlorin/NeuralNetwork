@@ -1,67 +1,92 @@
 import numpy as np
-from sklearn.metrics import log_loss, accuracy_score
-from tensorflow.keras.losses import CategoricalCrossentropy
+from tensorflow.keras.datasets import mnist
+from sklearn.metrics import accuracy_score
 
+# Activation functions and derivatives
+def relu(x):
+    return np.maximum(0, x)
 
-def sigmoid_elem(x):
-    if x > 10:
-        return 1
-    if x < -10:
-        return 0
-    return 1 / (1 + np.exp(-x))
+def relu_derivative(x):
+    return (x > 0).astype(float)
 
+def softmax(x):
+    exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+    return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
-def sigmoid(X):
-    return np.vectorize(sigmoid_elem)(X)
-
-
-def sigmoid_derivative(output):
-    return output * (1 - output)
-
+# Xavier Initialization
+def xavier_init(in_dim, out_dim):
+    limit = np.sqrt(6 / (in_dim + out_dim))
+    return np.random.uniform(-limit, limit, size=(in_dim, out_dim))
 
 class NeuralNetwork:
     def __init__(self, layers):
+        self.layers = layers
         self.weights = []
         self.biases = []
-
+        # Initialize weights and biases with Xavier init
         for i in range(len(layers) - 1):
-            self.weights.append(np.random.randn(layers[i], layers[i + 1]))
-            self.biases.append(np.zeros((1, layers[i + 1])))
+            self.weights.append(xavier_init(layers[i], layers[i+1]))
+            self.biases.append(np.zeros((1, layers[i+1])))
 
     def feed_forward(self, X):
         activations = [X]
+        pre_activations = []
 
-        for w, b in zip(self.weights, self.biases):
-            X = sigmoid(np.dot(X, w) + b)
-            activations.append(X)
+        for i in range(len(self.weights) - 1):
+            z = np.dot(activations[-1], self.weights[i]) + self.biases[i]
+            pre_activations.append(z)
+            a = relu(z)
+            activations.append(a)
 
-        return activations
+        # Output layer
+        z = np.dot(activations[-1], self.weights[-1]) + self.biases[-1]
+        pre_activations.append(z)
+        a = softmax(z)
+        activations.append(a)
 
-    def back_propagation(self, X, y, lr=0.1):
-        activations = self.feed_forward(X)
+        return activations, pre_activations
 
-        delta = (activations[-1] - y) * sigmoid_derivative(activations[-1])
+    def back_propagation(self, X, y, activations, pre_activations, lr):
+        m = X.shape[0]
+        delta = activations[-1] - y  # output layer error
 
         for i in reversed(range(len(self.weights))):
             a_prev = activations[i]
-            dw = np.dot(a_prev.T, delta)
-            db = np.sum(delta, axis=0, keepdims=True)
+            dw = np.dot(a_prev.T, delta) / m
+            db = np.sum(delta, axis=0, keepdims=True) / m
 
-            delta = np.dot(delta, self.weights[i].T) * sigmoid_derivative(a_prev)
+            self.weights[i] -= lr * dw
+            self.biases[i] -= lr * db
 
-            self.weights[i] -= lr * dw / X.shape[0]
-            self.biases[i] -= lr * db / X.shape[0]
+            if i > 0:
+                dz = np.dot(delta, self.weights[i].T)
+                delta = dz * relu_derivative(pre_activations[i-1])
 
-    def train(self, X, y, epochs=1):
-        for e in range(epochs):
-            self.back_propagation(X, y)
+    def train(self, X, y, epochs=10, batch_size=64, lr=0.01):
+        n_samples = X.shape[0]
 
-            y_pred = self.feed_forward(X)[-1]
+        for epoch in range(epochs):
+            permutation = np.random.permutation(n_samples)
+            X_shuffled = X[permutation]
+            y_shuffled = y[permutation]
 
-            cce = CategoricalCrossentropy()
-            loss = cce(y_pred, y)
+            epoch_loss = 0
+            for i in range(0, n_samples, batch_size):
+                X_batch = X_shuffled[i:i+batch_size]
+                y_batch = y_shuffled[i:i+batch_size]
 
-            print(f"Epoch {e} -- loss:{loss}")
+                activations, pre_activations = self.feed_forward(X_batch)
+                self.back_propagation(X_batch, y_batch, activations, pre_activations, lr)
+
+                batch_loss = -np.mean(np.sum(y_batch * np.log(activations[-1] + 1e-9), axis=1))
+                epoch_loss += batch_loss * X_batch.shape[0]
+
+            epoch_loss /= n_samples
+            print(f"Epoch {epoch+1}/{epochs} - Loss: {epoch_loss:.4f}")
 
     def predict(self, X):
-        return np.argmax(self.feed_forward(X)[-1])
+        activations, _ = self.feed_forward(X)
+        return np.argmax(activations[-1], axis=1)
+
+
+

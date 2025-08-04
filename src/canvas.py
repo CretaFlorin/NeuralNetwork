@@ -1,3 +1,4 @@
+import pickle
 import pygame
 import numpy as np
 
@@ -12,6 +13,9 @@ BLACK = (0, 0, 0)
 GRAY = (50, 50, 50)
 
 
+def load_model(file):
+    with open(file, "rb") as f:
+        return pickle.load(f)
 
 
 class DrawingCanvas:
@@ -22,6 +26,9 @@ class DrawingCanvas:
         self.canvas = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.uint8)
         self.lastPoint = None
 
+        self.model = load_model("./models/model_4.pickle")
+        self.pred = ""
+
     def draw_grid(self):
         for x in range(GRID_SIZE + 1):
             pygame.draw.line(
@@ -31,6 +38,14 @@ class DrawingCanvas:
             pygame.draw.line(
                 self.screen, GRAY, (0, y * PIXEL_SIZE), (CANVAS_WIDTH, y * PIXEL_SIZE)
             )
+
+    def draw_result(self):
+        font = pygame.font.SysFont(None, 200)
+        text_surface = font.render(str(self.pred), True, WHITE)
+        text_rect = text_surface.get_rect(
+            center=(CANVAS_WIDTH + 100, WINDOW_HEIGHT // 2)
+        )
+        self.screen.blit(text_surface, text_rect)
 
     def draw_pixels(self):
         for y in range(GRID_SIZE):
@@ -63,14 +78,24 @@ class DrawingCanvas:
                         #     for i in range(last[0], grid_x):
 
                         #     pass
-                            # color_pixel
-                            
+                        # color_pixel
+
                         self.color_pixel(grid_x, grid_y)
                         self.lastPoint = (grid_x, grid_y)
 
+            start_prediction = pygame.mouse.get_pressed()[2]
+            if start_prediction:
+                img = self.get_canvas().reshape((1, 784))
+                y_pred = self.model.predict(img)
+                self.pred = str(y_pred[0])
+
+            clear = pygame.mouse.get_pressed()[1]
+            if clear:
+                self.clear_canvas()
 
             self.draw_pixels()
             self.draw_grid()
+            self.draw_result()
             pygame.display.flip()
 
             for event in pygame.event.get():
@@ -85,19 +110,23 @@ class DrawingCanvas:
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = grid_x + dx, grid_y + dy
             if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
-                self.canvas[ny, nx] = max(self.canvas[ny, nx], 150)
+                self.canvas[ny, nx] = max(self.canvas[ny, nx], 200)
         #
         for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
             nx, ny = grid_x + dx, grid_y + dy
             if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
-                self.canvas[ny, nx] = max(self.canvas[ny, nx], 100)
+                self.canvas[ny, nx] = max(self.canvas[ny, nx], 50)
         # #
-        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
-            nx, ny = grid_x + dx, grid_y + dy
-            if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
-                self.canvas[ny, nx] = max(self.canvas[ny, nx], 30)
+        # for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
+        #     nx, ny = grid_x + dx, grid_y + dy
+        #     if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+        #         self.canvas[ny, nx] = max(self.canvas[ny, nx], 30)
 
     def get_canvas(self):
         return self.canvas.copy()
 
+    def set_canvas(self, matrix):
+        self.canvas = matrix
 
+    def clear_canvas(self):
+        self.canvas = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.uint8)
